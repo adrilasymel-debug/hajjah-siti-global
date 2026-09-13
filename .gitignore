@@ -1,0 +1,15 @@
+.env
+.venv/
+node_modules/
+dist/
+__pycache__/
+.pytest_cache/
+*.db
+private-files/
+*.log
+.DS_Store
+.runtime/
+*.tsbuildinfo
+.env.production
+.ocr-cache/
+backups/

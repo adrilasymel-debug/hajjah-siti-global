@@ -1,0 +1,24 @@
+import {useEffect,useRef,useState, type ReactNode} from 'react';
+import {X,LoaderCircle,Search,ChevronLeft,ChevronRight,Inbox,AlertCircle,Check} from 'lucide-react';
+import {api,label,type Row} from './api';
+
+export function Badge({value}:{value:string}){return <span className={'badge '+value}>{label(value)}</span>}
+export function Empty({title='Nothing here yet',text='Records will appear here as you work.',action}:{title?:string,text?:string,action?:ReactNode}){return <div className="empty"><Inbox size={32}/><h3>{title}</h3><p>{text}</p>{action}</div>}
+export function Loading(){return <div className="loading" role="status"><LoaderCircle className="spin"/>Loading your workspace…</div>}
+export function ErrorBox({message}:{message:string}){return message?<div className="error" role="alert"><AlertCircle size={18}/>{message}</div>:null}
+export function PageHead({eyebrow,title,description,actions}:{eyebrow:string,title:string,description?:string,actions?:ReactNode}){return <header className="page-head"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1>{description&&<p>{description}</p>}</div><div className="head-actions">{actions}</div></header>}
+export function SearchBox({value,onChange,placeholder='Search records…'}:{value:string,onChange:(v:string)=>void,placeholder?:string}){return <div className="search"><Search size={18}/><input aria-label={placeholder} placeholder={placeholder} value={value} onChange={e=>onChange(e.target.value)}/></div>}
+export function Pager({page,total,size=25,onChange}:{page:number,total:number,size?:number,onChange:(p:number)=>void}){return <div className="pager"><span>{total?`${(page-1)*size+1}–${Math.min(page*size,total)} of ${total} records`:'0 records'}</span><div><button className="icon-btn" aria-label="Previous page" disabled={page===1} onClick={()=>onChange(page-1)}><ChevronLeft size={18}/></button><span>Page {page}</span><button className="icon-btn" aria-label="Next page" disabled={page*size>=total} onClick={()=>onChange(page+1)}><ChevronRight size={18}/></button></div></div>}
+export function Modal({title,children,onClose,wide=false}:{title:string,children:ReactNode,onClose:()=>void,wide?:boolean}){
+ const ref=useRef<HTMLDialogElement>(null);
+ useEffect(()=>{ref.current?.showModal();const el=ref.current;return()=>el?.close()},[]);
+ return <dialog ref={ref} className={'modal '+(wide?'wide':'')} onCancel={onClose}><div className="modal-head"><h2>{title}</h2><button className="icon-btn" aria-label="Close dialog" onClick={onClose}><X size={20}/></button></div>{children}</dialog>
+}
+export type Field={key:string,label:string,type?:string,required?:boolean,options?:{value:string,label:string}[],step?:string,min?:string,full?:boolean};
+export function Form({fields,initial={},onSave,onCancel,submit='Save record',children}:{fields:Field[],initial?:Row,onSave:(data:Row)=>Promise<void>,onCancel:()=>void,submit?:string,children?:ReactNode}){
+ const [data,setData]=useState<Row>(initial),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ return <form onSubmit={async e=>{e.preventDefault();setBusy(true);setError('');try{await onSave(data)}catch(e){setError((e as Error).message)}finally{setBusy(false)}}}>
+ <div className="form-grid">{fields.map(f=><label className={f.full?'full':''} key={f.key}>{f.label}{f.required&&<span className="required"> *</span>}{f.options?<select aria-label={f.label} required={f.required} value={data[f.key]??''} onChange={e=>setData({...data,[f.key]:e.target.value})}><option value="">Select…</option>{f.options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select>:f.type==='textarea'?<textarea aria-label={f.label} value={data[f.key]??''} onChange={e=>setData({...data,[f.key]:e.target.value})}/>:<input aria-label={f.label} type={f.type||'text'} required={f.required} min={f.min} step={f.step|| (f.type==='number'?'0.01':undefined)} value={data[f.key]??''} onChange={e=>setData({...data,[f.key]:e.target.value})}/>}</label>)}</div>{children}<ErrorBox message={error}/><div className="form-actions"><button type="button" className="button secondary" onClick={onCancel}>Cancel</button><button className="button" disabled={busy}>{busy?<LoaderCircle size={17} className="spin"/>:<Check size={17}/>} {busy?'Saving…':submit}</button></div></form>
+}
+export function useResource(path:string,refresh=0){const [data,setData]=useState<any>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true);useEffect(()=>{let active=true;setLoading(true);setError('');api(path).then(v=>{if(active)setData(v)}).catch(e=>{if(active)setError(e.message)}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[path,refresh]);return {data,error,loading}}
+export function useDebounce(value:string){const [v,setV]=useState(value);useEffect(()=>{const t=setTimeout(()=>setV(value),250);return()=>clearTimeout(t)},[value]);return v}

@@ -1,0 +1,1 @@
+{"name":"hsg-free-ocr","private":true,"version":"1.0.0","dependencies":{"tesseract.js":"^6.0.1"}}

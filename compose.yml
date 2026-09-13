@@ -1,0 +1,62 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: family_ops
+      POSTGRES_USER: family
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the root .env}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U family -d family_ops']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  migrate:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://family:${POSTGRES_PASSWORD}@db:5432/family_ops
+    command: [alembic, upgrade, head]
+    depends_on:
+      db:
+        condition: service_healthy
+  api:
+    build: ./backend
+    env_file: ./backend/.env
+    environment: &app-env
+      DATABASE_URL: postgresql+psycopg://family:${POSTGRES_PASSWORD}@db:5432/family_ops
+      FRONTEND_ORIGIN: http://localhost:8080
+      STORAGE_PATH: /app/private-files
+    volumes:
+      - files:/app/private-files
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+  worker:
+    build: ./backend
+    env_file: ./backend/.env
+    environment: *app-env
+    command: [python, -m, app.worker]
+    volumes:
+      - files:/app/private-files
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+  web:
+    build: ./frontend
+    ports: ['127.0.0.1:8080:8080']
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  database:
+  files:

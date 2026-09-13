@@ -1,0 +1,13 @@
+.git
+**/node_modules
+**/.env
+**/.env.production
+**/*.db
+**/private-files
+**/__pycache__
+**/.pytest_cache
+**/.ocr-cache
+.venv
+.runtime
+frontend/dist
+**/backups

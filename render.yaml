@@ -1,0 +1,49 @@
+services:
+  - type: web
+    name: hajjah-siti-global
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile.free
+    healthCheckPath: /api/health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: COMPANY_NAME
+        value: HAJJAH SITI GLOBAL
+      - key: BUSINESS_TYPE
+        value: Dried seafood
+      - key: FREE_ONLY
+        value: 'true'
+      - key: OCR_PROVIDER
+        value: local
+      - key: OCR_LANGUAGES
+        value: eng+msa
+      - key: EXTRACTION_PROVIDER
+        value: rules
+      - key: INLINE_WORKER
+        value: 'true'
+      - key: DATABASE_SCHEMA
+        value: hsg_operations
+      - key: DATABASE_URL
+        sync: false
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: STORAGE_BACKEND
+        value: s3
+      - key: S3_BUCKET
+        value: business-documents
+      - key: S3_ENDPOINT_URL
+        sync: false
+      - key: AWS_DEFAULT_REGION
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: INITIAL_OWNER_NAME
+        sync: false
+      - key: INITIAL_OWNER_EMAIL
+        sync: false
+      - key: INITIAL_OWNER_PASSWORD
+        sync: false

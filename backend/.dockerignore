@@ -1,0 +1,10 @@
+.env*
+.venv
+*.db
+private-files
+__pycache__
+.pytest_cache
+tests
+.ocr-cache
+ocr/node_modules
+backups

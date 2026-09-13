@@ -1,0 +1,33 @@
+# External managed PostgreSQL and private S3. Put HTTPS ingress in front of web.
+services:
+  migrate:
+    build: ./backend
+    env_file: ./backend/.env.production
+    command: [alembic, upgrade, head]
+  api:
+    build: ./backend
+    env_file: ./backend/.env.production
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+  worker:
+    build: ./backend
+    env_file: ./backend/.env.production
+    command: [python, -m, app.worker]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+  web:
+    build: ./frontend
+    ports: ['127.0.0.1:8080:8080']
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
