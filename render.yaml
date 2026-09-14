@@ -16,11 +16,17 @@ services:
       - key: FREE_ONLY
         value: 'true'
       - key: OCR_PROVIDER
-        value: local
+        value: gemini
       - key: OCR_LANGUAGES
         value: eng+msa
       - key: EXTRACTION_PROVIDER
-        value: rules
+        value: gemini
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_FREE_TIER_CONFIRMED
+        sync: false
       - key: INLINE_WORKER
         value: 'true'
       - key: DATABASE_SCHEMA

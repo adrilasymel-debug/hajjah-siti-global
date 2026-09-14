@@ -34,7 +34,7 @@ def dashboard(user=Depends(require('dashboard.read')),db:Session=Depends(get_db)
     return {'outstanding':outstanding,'overdue':overdue,'total_bills':sum(counts.values()),'needs_review':counts.get('needs_review',0),'failed':counts.get('processing_failed',0),'processing':counts.get('processing',0),'missing':missing,'duplicates':duplicate_count,'attention':[bill_json(db,b) for b in attention],'due':[bill_json(db,b) for b in due],'activity':activity,'trend':trend}
 
 @router.get('/documents')
-def documents(q:str='',page_number:int=Query(1,ge=1),page_size:int=Query(25,ge=1,le=100),user=Depends(current_user),db:Session=Depends(get_db)):
+def documents(q:str='',page_number:int=Query(1,ge=1),page_size:int=Query(25,ge=1,le=100),user=Depends(require('documents.manage')),db:Session=Depends(get_db)):
     query=select(Document).where(Document.name.ilike(f'%{q[:100]}%'))
     if user.role!='BOSS':query=query.where(Document.owner_id==user.id,Document.category=='invoice')
     rows,total=page(db,query.order_by(Document.created_at.desc()),page_number,page_size)
@@ -98,7 +98,8 @@ def roles(user=Depends(require('users.manage')),db:Session=Depends(get_db)):
 @router.get('/settings')
 def read_settings(user=Depends(require('settings.manage')),db:Session=Depends(get_db)):
     s=db.get(BusinessSetting,'company_name')
-    return {'company_name':s.value if s else settings.company_name,'business_type':settings.business_type,'currency':'MYR','ocr_configured':settings.ocr_provider=='local' or bool(settings.ocr_endpoint),'ai_configured':settings.extraction_provider=='ollama' and bool(settings.extraction_endpoint),'extraction_mode':settings.extraction_provider,'free_only':settings.free_only,'environment':settings.environment}
+    gemini_ready=settings.extraction_provider=='gemini' and bool(settings.gemini_api_key) and (not settings.free_only or settings.gemini_free_tier_confirmed)
+    return {'company_name':s.value if s else settings.company_name,'business_type':settings.business_type,'currency':'MYR','ocr_configured':gemini_ready if settings.extraction_provider=='gemini' else settings.ocr_provider=='local' or bool(settings.ocr_endpoint),'ai_configured':gemini_ready or (settings.extraction_provider=='ollama' and bool(settings.extraction_endpoint)),'extraction_mode':settings.extraction_provider,'free_only':settings.free_only,'environment':settings.environment}
 
 @router.put('/settings')
 def edit_settings(data:SettingIn,user=Depends(require('settings.manage')),db:Session=Depends(get_db)):

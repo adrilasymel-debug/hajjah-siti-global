@@ -82,7 +82,7 @@ def test_upload_validation_hash_duplicates_and_private_access(ctx):
     b=c.post('/api/supplier-bills/upload',files={'file':('second.png',content,'image/png')});assert a.json()['id'] in b.json()['duplicate_ids']
     doc=a.json()['document_id'];assert c.get('/api/documents/'+doc+'/content').status_code==200
     assert ctx['other'].get('/api/documents/'+doc+'/content').status_code==404
-    assert ctx['other'].get('/api/documents').json()['total']==0
+    assert ctx['other'].get('/api/documents').status_code==403
 
 def test_expected_invoice_evidence_and_resolution(ctx):
     b=verified(ctx);c=ctx['boss'];r=c.post('/api/expected-invoices',json={'supplier_id':b['supplier_id'],'expected_date':str(date.today()-timedelta(days=2)),'evidence':'Delivery note DN-123 confirmed'});assert r.status_code==201

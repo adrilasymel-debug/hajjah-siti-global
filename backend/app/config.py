@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     extraction_endpoint: str = ''
     extraction_api_key: str = ''
     extraction_model: str = ''
+    gemini_api_key: str = ''
+    gemini_model: str = 'gemini-2.5-flash'
+    gemini_free_tier_confirmed: bool = False
     demo_password: str = ''
 
     def validate_production(self):

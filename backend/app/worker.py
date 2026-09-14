@@ -20,7 +20,13 @@ def run_once():
         bill=db.get(Bill,bill_id);doc=db.get(Document,bill.document_id);key,mime=doc.key,doc.mime;db.commit()
     try:
         if attempt>3:raise ProcessingUnavailable('Processing stopped after repeated interruptions. Review this invoice manually or retry.')
-        data=storage.get(key);text=extract_text(data,mime,key);extracted,review=extract_structured(text)
+        data=storage.get(key)
+        from .config import settings
+        if settings.extraction_provider=='gemini':
+            from .gemini import extract_document
+            extracted,review=extract_document(data,mime)
+        else:
+            text=extract_text(data,mime,key);extracted,review=extract_structured(text)
         with SessionLocal() as db:
             job=db.scalar(select(Job).where(Job.id==job_id).with_for_update())
             if job.attempts!=attempt:return True
@@ -42,7 +48,7 @@ def run_once():
 
 def settings_model():
     from .config import settings
-    return settings.extraction_model
+    return settings.gemini_model if settings.extraction_provider=='gemini' else settings.extraction_model
 
 if __name__=='__main__':
     logging.basicConfig(level=logging.INFO)
