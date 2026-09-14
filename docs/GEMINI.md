@@ -4,7 +4,7 @@ Set these Render environment variables, then save and deploy:
 
 - `EXTRACTION_PROVIDER=gemini`
 - `OCR_PROVIDER=gemini` (the worker sends the original directly to Gemini)
-- `GEMINI_MODEL=gemini-2.5-flash`
+- `GEMINI_MODEL=gemini-3.6-flash`
 - `GEMINI_API_KEY`: private Google AI Studio key, server only
 - `GEMINI_FREE_TIER_CONFIRMED=true`: set only for a Free-tier project with billing disabled
 - Keep `FREE_ONLY=true`.

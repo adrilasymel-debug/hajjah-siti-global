@@ -11,7 +11,7 @@ def cloud(monkeypatch):
     monkeypatch.setattr(settings,'gemini_api_key','test-key')
     monkeypatch.setattr(settings,'gemini_free_tier_confirmed',True)
     monkeypatch.setattr(settings,'free_only',True)
-    monkeypatch.setattr(settings,'gemini_model','gemini-2.5-flash')
+    monkeypatch.setattr(settings,'gemini_model','gemini-3.6-flash')
 
 def mock_provider(monkeypatch,handler):
     original=httpx.Client

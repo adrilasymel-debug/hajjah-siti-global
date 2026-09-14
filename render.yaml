@@ -22,7 +22,7 @@ services:
       - key: EXTRACTION_PROVIDER
         value: gemini
       - key: GEMINI_MODEL
-        value: gemini-2.5-flash
+        value: gemini-3.6-flash
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_FREE_TIER_CONFIRMED
