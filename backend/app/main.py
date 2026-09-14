@@ -10,7 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from .config import settings
 from .db import get_db
-from . import auth, purchasing, people, operations
+from . import auth, purchasing, people, operations, wastage
 
 @asynccontextmanager
 async def lifespan(app):
@@ -58,7 +58,7 @@ async def unexpected_error(request,exc):
 def health(db=Depends(get_db)):
     db.execute(text('SELECT 1'));return {'status':'ok','service':'family-operations'}
 
-for router in [auth.router,purchasing.router,people.router,operations.router]:app.include_router(router,prefix='/api')
+for router in [auth.router,purchasing.router,people.router,operations.router,wastage.router]:app.include_router(router,prefix='/api')
 
 if settings.frontend_dist:
     dist=Path(settings.frontend_dist)

@@ -43,7 +43,7 @@ def documents(q:str='',page_number:int=Query(1,ge=1),page_size:int=Query(25,ge=1
 @router.get('/documents/{id}/content')
 def document_content(id:str,download:bool=False,user=Depends(current_user),db:Session=Depends(get_db)):
     d=db.get(Document,id)
-    if not d or (user.role!='BOSS' and (d.owner_id!=user.id or d.category!='invoice')):raise HTTPException(404,'Document not found')
+    if not d or (user.role!='BOSS' and (d.owner_id!=user.id or d.category not in ['invoice','wastage'])):raise HTTPException(404,'Document not found')
     audit(db,user,'document_downloaded' if download else 'document_viewed','document',id)
     extension={'application/pdf':'pdf','image/png':'png','image/jpeg':'jpg'}[d.mime]
     return Response(storage.get(d.key),media_type=d.mime,headers={'Content-Disposition':f'{"attachment" if download else "inline"}; filename="document-{id[:8]}.{extension}"','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"sandbox; default-src 'none'"})

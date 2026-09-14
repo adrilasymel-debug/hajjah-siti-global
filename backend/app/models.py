@@ -173,3 +173,34 @@ class BusinessSetting(Base):
     __tablename__ = 'business_settings'
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
     value: Mapped[str] = mapped_column(Text)
+
+class Wastage(Record, Base):
+    __tablename__ = 'wastage'
+    goods_name: Mapped[str] = mapped_column(String(200), index=True)
+    damage_date: Mapped[date] = mapped_column(Date, index=True)
+    quantity_kg: Mapped[Decimal] = mapped_column(Numeric(16, 3))
+    damage: Mapped[str] = mapped_column(Text)
+    submitted_by: Mapped[str] = mapped_column(ForeignKey('users.id'), index=True)
+    staff_name: Mapped[str] = mapped_column(String(150))
+    status: Mapped[str] = mapped_column(String(30), default='awaiting_decision', index=True)
+    action: Mapped[str] = mapped_column(String(20), default='')
+    instruction: Mapped[str] = mapped_column(Text, default='')
+    decided_by: Mapped[str | None] = mapped_column(ForeignKey('users.id'))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(default=1)
+    __table_args__ = (CheckConstraint('quantity_kg > 0'),)
+
+class WastageEvidence(Record, Base):
+    __tablename__ = 'wastage_evidence'
+    wastage_id: Mapped[str] = mapped_column(ForeignKey('wastage.id'), index=True)
+    document_id: Mapped[str] = mapped_column(ForeignKey('documents.id'), unique=True)
+    phase: Mapped[str] = mapped_column(String(20))
+    version: Mapped[int]
+    note: Mapped[str] = mapped_column(Text, default='')
+
+class Notification(Record, Base):
+    __tablename__ = 'notifications'
+    user_id: Mapped[str] = mapped_column(ForeignKey('users.id'), index=True)
+    title: Mapped[str] = mapped_column(String(250))
+    wastage_id: Mapped[str] = mapped_column(ForeignKey('wastage.id'), index=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
