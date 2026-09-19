@@ -20,8 +20,12 @@ def digest(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
 def audit(db, user, action, entity, entity_id, details=None):
-    db.add(Audit(actor_id=user.id if user else None, actor_name=user.name if user else 'Processing service',
-                 action=action, entity=entity, entity_id=entity_id, details=details or {}))
+    from uuid import uuid4
+    from .email_delivery import enqueue
+    event=Audit(id=str(uuid4()),actor_id=user.id if user else None, actor_name=user.name if user else 'Processing service',
+                action=action, entity=entity, entity_id=entity_id, details=details or {})
+    db.add(event)
+    enqueue(db,event)
 
 def current_user(request: Request, db: DBSession = Depends(get_db)):
     token = request.cookies.get('fo_session', '')

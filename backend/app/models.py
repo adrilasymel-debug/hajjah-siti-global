@@ -204,3 +204,16 @@ class Notification(Record, Base):
     title: Mapped[str] = mapped_column(String(250))
     wastage_id: Mapped[str] = mapped_column(ForeignKey('wastage.id'), index=True)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+class EmailDelivery(Record, Base):
+    __tablename__ = 'email_deliveries'
+    user_id: Mapped[str] = mapped_column(ForeignKey('users.id'), index=True)
+    event_id: Mapped[str] = mapped_column(ForeignKey('audit_logs.id'))
+    subject: Mapped[str] = mapped_column(String(150))
+    path: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(20), default='queued', index=True)
+    attempts: Mapped[int] = mapped_column(default=0)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)
+    last_error: Mapped[str] = mapped_column(String(200), default='')
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (UniqueConstraint('event_id','user_id'),)

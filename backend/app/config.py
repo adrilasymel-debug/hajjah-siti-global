@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     gemini_model: str = 'gemini-3.6-flash'
     gemini_free_tier_confirmed: bool = False
     demo_password: str = ''
+    email_enabled: bool = False
+    email_free_tier_confirmed: bool = False
+    brevo_api_key: str = ''
+    email_from: str = ''
 
     def validate_production(self):
         if self.environment == 'production':

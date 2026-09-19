@@ -10,11 +10,19 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from .config import settings
 from .db import get_db
-from . import auth, purchasing, people, operations, wastage
+from . import auth, purchasing, people, operations, wastage, email_delivery
 
 @asynccontextmanager
 async def lifespan(app):
     task=None
+    email_task=None
+    if settings.email_enabled:
+        async def deliver():
+            while True:
+                try:await asyncio.to_thread(email_delivery.run_once)
+                except Exception:logging.getLogger(__name__).warning('Email delivery cycle failed; pending messages retained')
+                await asyncio.sleep(3)
+        email_task=asyncio.create_task(deliver())
     if settings.inline_worker:
         from .worker import run_once
         async def consume():
@@ -24,6 +32,10 @@ async def lifespan(app):
                 await asyncio.sleep(3)
         task=asyncio.create_task(consume())
     yield
+    if email_task:
+        email_task.cancel()
+        try:await email_task
+        except asyncio.CancelledError:pass
     if task:
         task.cancel()
         try:await task
@@ -58,7 +70,7 @@ async def unexpected_error(request,exc):
 def health(db=Depends(get_db)):
     db.execute(text('SELECT 1'));return {'status':'ok','service':'family-operations'}
 
-for router in [auth.router,purchasing.router,people.router,operations.router,wastage.router]:app.include_router(router,prefix='/api')
+for router in [auth.router,purchasing.router,people.router,operations.router,wastage.router,email_delivery.router]:app.include_router(router,prefix='/api')
 
 if settings.frontend_dist:
     dist=Path(settings.frontend_dist)
