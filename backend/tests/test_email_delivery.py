@@ -42,13 +42,14 @@ def test_processing_email_to_submitter(enabled,monkeypatch):
     monkeypatch.setattr(mail.httpx,'post',lambda url,**kwargs:(calls.append(kwargs['json']) or httpx.Response(201)))
     mail.run_once();assert calls[0]['to'][0]['email']=='staff@test.local'
 
-@pytest.mark.parametrize('code,status',[(429,'queued'),(503,'queued'),(401,'failed')])
+@pytest.mark.parametrize('code,status',[(429,'queued'),(503,'queued'),(401,'failed'),(403,'failed')])
 def test_delivery_errors_preserve_record(enabled,monkeypatch,code,status):
     event(enabled)
     monkeypatch.setattr(mail.httpx,'post',lambda *a,**kw:httpx.Response(code,text='sensitive provider response'))
     assert mail.run_once()
     with enabled['db']() as db:
         r=db.scalar(select(EmailDelivery));assert r.status==status;assert 'sensitive' not in r.last_error
+        if code in [401,403]: assert str(code) in r.last_error
         assert db.scalar(select(Bill)) is not None
 
 def test_disabled_and_inactive_recipient(enabled,monkeypatch):
@@ -80,3 +81,17 @@ def test_free_tier_confirmation_blocks_sending(enabled,monkeypatch):
     monkeypatch.setattr(mail.settings,'email_free_tier_confirmed',False)
     monkeypatch.setattr(mail.httpx,'post',lambda *a,**kw:pytest.fail('Free tier must be confirmed'))
     assert mail.run_once() is False
+
+def test_owner_can_retry_one_failed_email(enabled,monkeypatch):
+    event(enabled)
+    monkeypatch.setattr(mail.httpx,'post',lambda *a,**kw:httpx.Response(401))
+    assert mail.run_once()
+    with enabled['db']() as db:
+        delivery_id=db.scalar(select(EmailDelivery)).id
+    path='/api/email-deliveries/'+delivery_id+'/retry'
+    assert enabled['staff'].post(path).status_code==403
+    assert enabled['boss'].post(path).json()=={'queued':1}
+    assert enabled['boss'].post(path).status_code==404
+    with enabled['db']() as db:
+        row=db.get(EmailDelivery,delivery_id)
+        assert row.status=='queued' and row.attempts==0

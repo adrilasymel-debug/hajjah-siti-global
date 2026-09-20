@@ -1,7 +1,7 @@
 """Transactional outbox: external delivery never runs inside a submission request."""
 from datetime import timedelta
 import httpx
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func
 from .config import settings
 from .db import SessionLocal, get_db
@@ -66,8 +66,10 @@ def run_once():
             elif response.status_code==429:
                 # Free quota exhausted: wait rather than buying credits or dropping the message.
                 row.attempts-=1;row.available_at=now()+timedelta(hours=1);row.last_error='Provider quota reached; waiting to retry'
-            elif response.status_code in [401,403]:
-                row.status='failed';row.last_error='Check the Brevo API key, sender verification and account activation'
+            elif response.status_code==401:
+                row.status='failed';row.last_error='Brevo 401: API key invalid or inactive. Use an active API key, not an SMTP key.'
+            elif response.status_code==403:
+                row.status='failed';row.last_error='Brevo 403: account is not permitted to send. Check transactional activation and API access.'
             elif response.status_code>=500:
                 retry(row,'Email provider temporarily unavailable')
             else:
@@ -97,3 +99,10 @@ def retry_failed(user=Depends(require('settings.manage')),db=Depends(get_db)):
     rows=list(db.scalars(select(EmailDelivery).where(EmailDelivery.status=='failed').with_for_update(skip_locked=True).limit(100)))
     for row in rows:row.status='queued';row.attempts=0;row.available_at=now()
     return {'queued':len(rows)}
+
+@router.post('/email-deliveries/{delivery_id}/retry')
+def retry_one(delivery_id: str,user=Depends(require('settings.manage')),db=Depends(get_db)):
+    row=db.scalar(select(EmailDelivery).where(EmailDelivery.id==delivery_id,EmailDelivery.status=='failed').with_for_update())
+    if not row:raise HTTPException(404,'Failed email not found')
+    row.status='queued';row.attempts=0;row.available_at=now()
+    return {'queued':1}
