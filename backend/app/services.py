@@ -45,9 +45,9 @@ def detect_duplicates(db, bill):
 
 def validate_bill(db, bill):
     if not bill.supplier_id or not db.get(Supplier, bill.supplier_id): raise HTTPException(422, 'Select a supplier')
-    if not bill.number or not bill.invoice_date or not bill.due_date: raise HTTPException(422, 'Invoice number and both dates are required')
+    if not bill.number or not bill.invoice_date: raise HTTPException(422, 'Invoice number and invoice date are required')
     if bill.invoice_date > date.today(): raise HTTPException(422, 'Invoice date cannot be in the future')
-    if bill.due_date < bill.invoice_date: raise HTTPException(422, 'Due date cannot precede invoice date')
+    if bill.due_date and bill.due_date < bill.invoice_date: raise HTTPException(422, 'Due date cannot precede invoice date')
     if bill.total <= 0 or money(bill.subtotal + bill.tax) != money(bill.total): raise HTTPException(422, 'Subtotal plus tax must equal a positive invoice total')
     if bill.items:
         for item in bill.items:

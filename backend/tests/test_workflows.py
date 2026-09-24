@@ -38,6 +38,17 @@ def test_invoice_verification_and_audit(ctx):
     with ctx['db']() as db:
         event=db.scalar(select(Audit).where(Audit.action=='invoice_verified'));assert event.entity_id==b['id'];assert event.details['total']=='106.00'
 
+def test_invoice_without_due_date_can_be_verified(ctx):
+    response=ctx['staff'].post('/api/supplier-bills',json={
+        'supplier_id':supplier(ctx),'number':'NO-DUE-001',
+        'invoice_date':str(date.today()),'subtotal':'50.00','tax':'0','total':'50.00'})
+    assert response.status_code==201,response.text
+    bill=response.json()
+    assert bill['due_date'] is None
+    verified=ctx['staff'].post('/api/supplier-bills/'+bill['id']+'/verify',json={'version':bill['version']})
+    assert verified.status_code==200,verified.text
+    assert verified.json()['payment_status']=='unpaid'
+
 def test_duplicate_requires_owner_resolution(ctx):
     first=verified(ctx);b=invoice(ctx,first['supplier_id']);assert first['id'] in b['duplicate_ids']
     assert ctx['staff'].post('/api/supplier-bills/'+b['id']+'/verify',json={'version':1}).status_code==409

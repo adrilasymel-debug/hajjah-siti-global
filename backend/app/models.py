@@ -178,7 +178,8 @@ class Wastage(Record, Base):
     __tablename__ = 'wastage'
     goods_name: Mapped[str] = mapped_column(String(200), index=True)
     damage_date: Mapped[date] = mapped_column(Date, index=True)
-    quantity_kg: Mapped[Decimal] = mapped_column(Numeric(16, 3))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(16, 3))
+    quantity_unit: Mapped[str] = mapped_column(String(10), default='kg')
     damage: Mapped[str] = mapped_column(Text)
     submitted_by: Mapped[str] = mapped_column(ForeignKey('users.id'), index=True)
     staff_name: Mapped[str] = mapped_column(String(150))
@@ -188,7 +189,11 @@ class Wastage(Record, Base):
     decided_by: Mapped[str | None] = mapped_column(ForeignKey('users.id'))
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(default=1)
-    __table_args__ = (CheckConstraint('quantity_kg > 0'),)
+    __table_args__ = (
+        CheckConstraint('quantity > 0'),
+        CheckConstraint("quantity_unit IN ('kg', 'unit')"),
+        CheckConstraint("quantity_unit = 'kg' OR quantity = CAST(quantity AS INTEGER)"),
+    )
 
 class WastageEvidence(Record, Base):
     __tablename__ = 'wastage_evidence'

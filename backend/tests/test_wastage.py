@@ -8,7 +8,7 @@ def photo(color='red'):
     out=io.BytesIO();Image.new('RGB',(20,20),color).save(out,format='PNG');return out.getvalue()
 
 def report(ctx, **overrides):
-    data={'goods_name':'Ikan bilis','damage_date':'2026-01-01','quantity_kg':'2.350','damage':'Moisture and visible mould'}
+    data={'goods_name':'Ikan bilis','damage_date':'2026-01-01','quantity':'2.350','quantity_unit':'kg','damage':'Moisture and visible mould'}
     data.update(overrides)
     return ctx['staff'].post('/api/wastage',data=data,files=[('photos',('damage.png',photo(),'image/png'))])
 
@@ -21,7 +21,7 @@ def proof(ctx,row,color='blue',actor='staff'):
 @pytest.mark.parametrize('action',['dispose','keep','other'])
 def test_complete_workflow_and_notifications(ctx,action):
     response=report(ctx);assert response.status_code==201,response.text
-    row=response.json();id=row['id'];assert row['staff_name']=='staff';assert row['quantity_kg']==2.35
+    row=response.json();id=row['id'];assert row['staff_name']=='staff';assert row['quantity']==2.35;assert row['quantity_unit']=='kg'
     assert ctx['boss'].get('/api/notifications').json()['unread']==1
     decision=instruct(ctx,row,action);assert decision.status_code==200,decision.text
     row=decision.json();assert row['status']=='action_required'
@@ -67,12 +67,21 @@ def test_returned_evidence_is_preserved_and_stale_review_rejected(ctx):
     assert len(ctx['staff'].get(path).json()['evidence'])==3
     assert row['status']=='proof_submitted'
 
-@pytest.mark.parametrize('bad',[{'quantity_kg':'0'},{'quantity_kg':'-1'},{'quantity_kg':'1.0001'},{'goods_name':' '},{'damage':' '},{'damage_date':'2099-01-01'}])
+@pytest.mark.parametrize('bad',[{'quantity':'0'},{'quantity':'-1'},{'quantity':'1.0001'},{'quantity':'2.5','quantity_unit':'unit'},{'quantity':'1','quantity_unit':'box'},{'goods_name':' '},{'damage':' '},{'damage_date':'2099-01-01'}])
 def test_report_validation(ctx,bad):
     assert report(ctx,**bad).status_code==422
     assert ctx['boss'].get('/api/wastage').json()['total']==0
 
 def test_fake_photo_rejected_without_record(ctx):
-    response=ctx['staff'].post('/api/wastage',data={'goods_name':'Fish','damage_date':'2026-01-01','quantity_kg':'1','damage':'Broken packaging'},files={'photos':('fake.jpg',b'not a photo','image/jpeg')})
+    response=ctx['staff'].post('/api/wastage',data={'goods_name':'Fish','damage_date':'2026-01-01','quantity':'1','quantity_unit':'kg','damage':'Broken packaging'},files={'photos':('fake.jpg',b'not a photo','image/jpeg')})
     assert response.status_code==422
     with ctx['db']() as db: assert db.scalar(select(Wastage)) is None
+
+def test_loose_wastage_records_whole_units(ctx):
+    response=report(ctx,quantity='7',quantity_unit='unit',goods_name='Loose dried squid')
+    assert response.status_code==201,response.text
+    row=response.json()
+    assert row['quantity']==7 and row['quantity_unit']=='unit'
+    detail=ctx['boss'].get('/api/wastage/'+row['id']).json()
+    assert detail['quantity']==7 and detail['quantity_unit']=='unit'
+    assert detail['history'][0]['details']['quantity_unit']=='unit'

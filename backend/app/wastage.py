@@ -91,13 +91,15 @@ def listing(q:str='', status:str='', date_from:date|None=None, date_to:date|None
     return {'items':[columns(r) for r in rows], 'total':total}
 
 @router.post('/wastage', status_code=201)
-async def create(goods_name:str=Form(min_length=1,max_length=200), damage_date:date=Form(), quantity_kg:Decimal=Form(gt=0,max_digits=16,decimal_places=3), damage:str=Form(min_length=5,max_length=3000), photos:list[UploadFile]=File(), user=Depends(current_user), db:Session=Depends(get_db)):
+async def create(goods_name:str=Form(min_length=1,max_length=200), damage_date:date=Form(), quantity:Decimal=Form(gt=0,max_digits=16,decimal_places=3), quantity_unit:Literal['kg','unit']=Form('kg'), damage:str=Form(min_length=5,max_length=3000), photos:list[UploadFile]=File(), user=Depends(current_user), db:Session=Depends(get_db)):
     if not goods_name.strip() or len(damage.strip()) < 5: raise HTTPException(422, 'Enter the goods name and describe the damage')
     if damage_date > date.today(): raise HTTPException(422, 'Damage date cannot be in the future')
+    if quantity_unit == 'unit' and quantity != quantity.to_integral_value():
+        raise HTTPException(422, 'Unit quantity must be a whole number')
     images = await read_photos(photos)
-    row = Wastage(goods_name=goods_name.strip(), damage_date=damage_date, quantity_kg=quantity_kg, damage=damage.strip(), submitted_by=user.id, staff_name=user.name)
+    row = Wastage(goods_name=goods_name.strip(), damage_date=damage_date, quantity=quantity, quantity_unit=quantity_unit, damage=damage.strip(), submitted_by=user.id, staff_name=user.name)
     db.add(row); db.flush()
-    audit(db,user,'wastage_reported','wastage',row.id,{'goods_name':row.goods_name,'quantity_kg':str(quantity_kg),'damage':row.damage})
+    audit(db,user,'wastage_reported','wastage',row.id,{'goods_name':row.goods_name,'quantity':str(quantity),'quantity_unit':quantity_unit,'damage':row.damage})
     notify(db,row,f'New damage report: {row.goods_name}',owners=True)
     store_photos(db,row,user,images,'damage')
     return columns(row)
