@@ -10,3 +10,7 @@
 .hsg-brand{font-size:.9rem;letter-spacing:.01em}.line-unit{display:flex;align-items:center;gap:12px;margin-top:10px!important;font-size:.8rem!important}.line-unit select{max-width:130px;margin:0}
 
 .ocr-text{padding:14px 18px;margin-bottom:16px}.ocr-text summary{cursor:pointer;font-weight:600}.ocr-text pre{white-space:pre-wrap;max-height:280px;overflow:auto;font-size:12px;line-height:1.7;color:var(--muted)}
+.brand-mark{font-size:.72rem;font-weight:800;letter-spacing:-.08em}
+.password-input{position:relative;display:block;margin-top:7px}.password-input input{margin-top:0;padding-right:45px}.password-input button{position:absolute;right:5px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:#738794;padding:8px;display:grid;place-items:center}.password-input button:hover{color:var(--teal);background:#edf4f5;border-radius:5px}
+.balance-private{display:flex;align-items:center;gap:12px}.balance-eye{display:grid;place-items:center;border:1px solid #3a5967;border-radius:7px;background:#173b4a;color:#a9c7d0;padding:8px}.balance-eye:hover{background:#214b5b;color:white}
+.staged-upload{display:flex;align-items:center;gap:14px;border:1px solid #dce5e9;border-radius:8px;background:#f8fbfc;padding:16px 18px}.staged-upload>span{flex:1;min-width:0}.staged-upload strong,.staged-upload small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.staged-upload small{margin-top:4px}

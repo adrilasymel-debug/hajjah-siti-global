@@ -7,7 +7,19 @@ import {Badge,Empty,ErrorBox,Loading,Modal,PageHead,Pager,SearchBox,useResource,
 import SupplierPicker from '../SupplierPicker';
 const PdfPreview=lazy(()=>import('../PdfPreview'));
 
-export function UploadDialog({onClose}:{onClose:()=>void}){const [busy,setBusy]=useState(false),[error,setError]=useState('');const navigate=useNavigate();return <Modal title="Upload supplier invoice" onClose={onClose}><p className="modal-copy">Upload the original document. Extracted details will always need a human review.</p><form onSubmit={async e=>{e.preventDefault();const file=(e.currentTarget.elements.namedItem('file') as HTMLInputElement).files?.[0];if(!file)return;setBusy(true);try{const data=new FormData();data.append('file',file);const bill=await api('/supplier-bills/upload',{method:'POST',body:data});onClose();navigate('/bills/'+bill.id)}catch(e){setError((e as Error).message)}finally{setBusy(false)}}}><label className="upload-zone"><Upload size={32}/><strong>Choose an invoice document</strong><span>PDF, JPG or PNG · up to 15 MB · maximum 50 PDF pages</span><input name="file" type="file" accept="application/pdf,image/png,image/jpeg" required/></label><ErrorBox message={error}/><div className="form-actions"><button className="button secondary" type="button" onClick={onClose}>Cancel</button><button className="button" disabled={busy}>{busy?'Uploading document…':'Upload & process'}</button></div></form></Modal>}
+export function UploadDialog({onClose}:{onClose:()=>void}){
+ const [busy,setBusy]=useState(false),[error,setError]=useState(''),[file,setFile]=useState<File|null>(null),[inputKey,setInputKey]=useState(0);
+ const navigate=useNavigate();
+ function remove(){setFile(null);setInputKey(x=>x+1);setError('')}
+ return <Modal title="Upload supplier invoice" onClose={onClose}>
+  <p className="modal-copy">Choose a document first. It stays only in this browser until you select Save &amp; process. Closing or refreshing before saving discards it.</p>
+  <form onSubmit={async e=>{e.preventDefault();if(!file)return;setBusy(true);try{const data=new FormData();data.append('file',file);const bill=await api('/supplier-bills/upload',{method:'POST',body:data});onClose();navigate('/bills/'+bill.id)}catch(e){setError((e as Error).message)}finally{setBusy(false)}}}>
+   {!file?<label className="upload-zone"><Upload size={32}/><strong>Choose an invoice document</strong><span>PDF, JPG or PNG · up to 15 MB · maximum 50 PDF pages</span><input key={inputKey} name="file" type="file" accept="application/pdf,image/png,image/jpeg" required onChange={e=>setFile(e.target.files?.[0]||null)}/></label>:<div className="staged-upload"><FileText size={24}/><span><strong>{file.name}</strong><small>{(file.size/1024/1024).toFixed(2)} MB · Not saved yet</small></span><button className="button secondary small" type="button" disabled={busy} onClick={remove}><Trash2 size={15}/>Remove</button></div>}
+   <ErrorBox message={error}/>
+   <div className="form-actions"><button className="button secondary" type="button" disabled={busy} onClick={onClose}>Cancel</button><button className="button" disabled={busy||!file}>{busy?'Saving document…':'Save & process invoice'}</button></div>
+  </form>
+ </Modal>
+}
 
 export function Bills({outstanding=false}:{outstanding?:boolean}){
  const [params,setParams]=useSearchParams();const [q,setQ]=useState(''),[page,setPage]=useState(1),[supplier,setSupplier]=useState(''),[from,setFrom]=useState(''),[to,setTo]=useState(''),[sort,setSort]=useState('newest'),[min,setMin]=useState(''),[max,setMax]=useState(''),[manual,setManual]=useState(false),[manualSupplier,setManualSupplier]=useState({name:'',id:null as string|null}),[refresh,setRefresh]=useState(0);
