@@ -1,8 +1,9 @@
 import hashlib
+import logging
 from datetime import date
 from pathlib import PurePath
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
-from sqlalchemy import select, func, or_, and_, text
+from sqlalchemy import select, func, or_, and_, text, delete
 from sqlalchemy.orm import Session, selectinload
 from .db import get_db
 from .models import Supplier, Bill, Document, Job, Payment, Allocation, ExpectedInvoice, Audit, now
@@ -31,6 +32,11 @@ def resolve_invoice_supplier(db,user,data):
         supplier=Supplier(name=name);db.add(supplier);db.flush()
         audit(db,user,'supplier_created','supplier',supplier.id,{'name':name,'source':'invoice_review'})
     data.supplier_id=supplier.id
+
+def remove_duplicate_reference(db,bill_id):
+    for other in db.scalars(select(Bill).where(Bill.id!=bill_id,Bill.duplicate_ids!=None)):
+        if bill_id in (other.duplicate_ids or []):
+            other.duplicate_ids=[value for value in other.duplicate_ids if value!=bill_id]
 
 @router.get('/suppliers/lookup')
 def supplier_lookup(q:str='',user=Depends(current_user),db:Session=Depends(get_db)):
@@ -61,16 +67,18 @@ def edit_supplier(id:str,data:SupplierIn,user=Depends(require('suppliers.manage'
 def supplier_detail(id:str,user=Depends(require('suppliers.manage')),db:Session=Depends(get_db)):
     s=db.get(Supplier,id)
     if not s:raise HTTPException(404,'Supplier not found')
-    bills=list(db.scalars(select(Bill).where(Bill.supplier_id==id).order_by(Bill.created_at.desc()).limit(20)))
+    bills=list(db.scalars(select(Bill).where(Bill.supplier_id==id,Bill.archived_at==None).order_by(Bill.created_at.desc()).limit(20)))
     paid=paid_query()
     outstanding=db.scalar(select(func.coalesce(func.sum(Bill.total-func.coalesce(paid.c.paid,0)),0)).outerjoin(paid,Bill.id==paid.c.bill_id).where(Bill.supplier_id==id,Bill.status.in_(OFFICIAL)))
     payments=list(db.scalars(select(Payment).where(Payment.supplier_id==id).order_by(Payment.created_at.desc()).limit(20)))
     return {**columns(s),'outstanding':outstanding,'bills':[bill_json(db,b) for b in bills],'payments':[payment_json(p) for p in payments]}
 
 @router.get('/supplier-bills')
-def bills(q:str='',supplier_id:str='',status:str='',payment_status:str='',date_from:date|None=None,date_to:date|None=None,amount_min:float|None=None,amount_max:float|None=None,sort:str='newest',page_number:int=Query(1,ge=1),page_size:int=Query(25,ge=1,le=100),user=Depends(current_user),db:Session=Depends(get_db)):
+def bills(q:str='',supplier_id:str='',status:str='',payment_status:str='',archived:bool=False,date_from:date|None=None,date_to:date|None=None,amount_min:float|None=None,amount_max:float|None=None,sort:str='newest',page_number:int=Query(1,ge=1),page_size:int=Query(25,ge=1,le=100),user=Depends(current_user),db:Session=Depends(get_db)):
     paid=paid_query();paid_amount=func.coalesce(paid.c.paid,0)
     query=select(Bill).outerjoin(Supplier).outerjoin(paid,Bill.id==paid.c.bill_id).options(selectinload(Bill.supplier))
+    if archived and user.role!='BOSS':raise HTTPException(403,'Only the owner can view archived invoices')
+    query=query.where(Bill.archived_at!=None if archived else Bill.archived_at==None)
     if user.role!='BOSS':query=query.where(Bill.submitted_by==user.id)
     if q:query=query.where(or_(Bill.number.ilike(f'%{q[:100]}%'),Supplier.name.ilike(f'%{q[:100]}%')))
     if supplier_id:query=query.where(Bill.supplier_id==supplier_id)
@@ -128,6 +136,7 @@ def bill_detail(id:str,user=Depends(current_user),db:Session=Depends(get_db)):
 @router.put('/supplier-bills/{id}')
 def edit_bill(id:str,data:BillEdit,user=Depends(current_user),db:Session=Depends(get_db)):
     bill=can_read_bill(db,user,db.scalar(select(Bill).where(Bill.id==id).with_for_update()))
+    if bill.archived_at:raise HTTPException(409,'Restore this invoice before editing it')
     if data.version!=bill.version:raise HTTPException(409,'This invoice changed. Reload before saving.')
     if bill.status=='processing':raise HTTPException(409,'Wait for processing to finish before editing')
     if bill.status in OFFICIAL and user.role!='BOSS':raise HTTPException(403,'Only the owner can correct verified records')
@@ -142,6 +151,7 @@ def edit_bill(id:str,data:BillEdit,user=Depends(current_user),db:Session=Depends
 @router.post('/supplier-bills/{id}/verify')
 def verify(id:str,data:VerifyIn,user=Depends(current_user),db:Session=Depends(get_db)):
     bill=can_read_bill(db,user,db.scalar(select(Bill).where(Bill.id==id).with_for_update()))
+    if bill.archived_at:raise HTTPException(409,'Restore this invoice before verifying it')
     if bill.version!=data.version:raise HTTPException(409,'This invoice changed. Reload before verifying.')
     if bill.status not in ['needs_review','processing_failed']:raise HTTPException(409,'Only reviewed invoices can be verified')
     validate_bill(db,bill);detect_duplicates(db,bill)
@@ -152,18 +162,70 @@ def verify(id:str,data:VerifyIn,user=Depends(current_user),db:Session=Depends(ge
 @router.post('/supplier-bills/{id}/approve')
 def approve(id:str,user=Depends(require('bills.manage')),db:Session=Depends(get_db)):
     bill=can_read_bill(db,user,db.scalar(select(Bill).where(Bill.id==id).with_for_update()))
+    if bill.archived_at:raise HTTPException(409,'Restore this invoice before approving it')
     if bill.status!='verified':raise HTTPException(409,'Verify the invoice first')
     bill.status='approved';bill.version+=1;audit(db,user,'invoice_approved','bill',id);return bill_json(db,bill)
 
 @router.post('/supplier-bills/{id}/reject')
 def reject(id:str,data:ReasonIn,user=Depends(require('bills.manage')),db:Session=Depends(get_db)):
     bill=can_read_bill(db,user,db.scalar(select(Bill).where(Bill.id==id).with_for_update()))
+    if bill.archived_at:raise HTTPException(409,'Restore this invoice before changing it')
     if balance(db,bill)[1]>0 or bill.status=='processing':raise HTTPException(409,'Paid or processing invoices cannot be rejected')
     bill.status='rejected';bill.version+=1;audit(db,user,'invoice_rejected','bill',id,{'reason':data.reason});return bill_json(db,bill)
+
+@router.post('/supplier-bills/{id}/archive')
+def archive_bill(id:str,data:ReasonIn,user=Depends(require('bills.manage')),db:Session=Depends(get_db)):
+    bill=can_read_bill(db,user,db.scalar(select(Bill).where(Bill.id==id).with_for_update()))
+    if bill.archived_at:raise HTTPException(409,'This invoice is already archived')
+    if bill.status not in ['rejected','processing_failed']:
+        raise HTTPException(409,'Reject the invoice before archiving it. Verified, approved and active invoices must remain available.')
+    if db.scalar(select(func.count()).select_from(Allocation).where(Allocation.bill_id==id)):
+        raise HTTPException(409,'Invoices with payment history cannot be archived')
+    bill.archived_at=now();bill.archived_by=user.id;bill.archive_reason=data.reason;bill.version+=1
+    remove_duplicate_reference(db,id)
+    audit(db,user,'invoice_archived','bill',id,{'reason':data.reason,'number':bill.number,'status':bill.status})
+    return bill_json(db,bill)
+
+@router.post('/supplier-bills/{id}/restore')
+def restore_bill(id:str,user=Depends(require('bills.manage')),db:Session=Depends(get_db)):
+    bill=can_read_bill(db,user,db.scalar(select(Bill).where(Bill.id==id).with_for_update()))
+    if not bill.archived_at:raise HTTPException(409,'This invoice is not archived')
+    reason=bill.archive_reason
+    bill.archived_at=None;bill.archived_by=None;bill.archive_reason='';bill.version+=1
+    audit(db,user,'invoice_restored','bill',id,{'previous_archive_reason':reason,'number':bill.number})
+    return bill_json(db,bill)
+
+@router.post('/supplier-bills/{id}/delete')
+def delete_bill(id:str,data:ReasonIn,user=Depends(require('bills.manage')),db:Session=Depends(get_db)):
+    bill=can_read_bill(db,user,db.scalar(select(Bill).where(Bill.id==id).with_for_update()))
+    if not bill.archived_at:raise HTTPException(409,'Archive this invoice before permanently deleting it')
+    if bill.status not in ['rejected','processing_failed']:
+        raise HTTPException(409,'Only rejected or failed invoices can be permanently deleted')
+    if db.scalar(select(func.count()).select_from(Allocation).where(Allocation.bill_id==id)):
+        raise HTTPException(409,'Invoices with payment history cannot be deleted')
+    if db.scalar(select(func.count()).select_from(ExpectedInvoice).where(ExpectedInvoice.bill_id==id)):
+        raise HTTPException(409,'This invoice is linked to an expected invoice and cannot be deleted')
+    if db.scalar(select(func.count()).select_from(Audit).where(Audit.entity=='bill',Audit.entity_id==id,
+                                                               Audit.action.in_(['invoice_verified','invoice_approved','payment_recorded']))):
+        raise HTTPException(409,'This invoice has official financial history and cannot be permanently deleted. Keep it archived for audit purposes.')
+    document=db.get(Document,bill.document_id) if bill.document_id else None
+    record={'reason':data.reason,'number':bill.number,'status':bill.status,'supplier_id':bill.supplier_id,
+            'document_name':document.name if document else None,'document_hash':document.sha256 if document else None}
+    remove_duplicate_reference(db,id)
+    db.execute(delete(Job).where(Job.bill_id==id))
+    audit(db,user,'invoice_deleted','bill',id,record)
+    db.delete(bill);db.flush()
+    if document:db.delete(document)
+    db.commit()
+    if document:
+        try:storage.delete(document.key)
+        except Exception:logging.getLogger(__name__).exception('Deleted invoice %s but could not remove its storage object',id)
+    return {'deleted':True,'id':id}
 
 @router.post('/supplier-bills/{id}/retry')
 def retry(id:str,user=Depends(current_user),db:Session=Depends(get_db)):
     bill=can_read_bill(db,user,db.scalar(select(Bill).where(Bill.id==id).with_for_update()))
+    if bill.archived_at:raise HTTPException(409,'Restore this invoice before retrying processing')
     if bill.status!='processing_failed' or not bill.document_id:raise HTTPException(409,'Only failed document processing can be retried')
     bill.status='processing';bill.version+=1;db.add(Job(bill_id=id));audit(db,user,'processing_retried','bill',id);return {'message':'Processing queued'}
 

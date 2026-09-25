@@ -17,13 +17,13 @@ router=APIRouter(tags=['Operations'])
 @router.get('/dashboard')
 def dashboard(user=Depends(require('dashboard.read')),db:Session=Depends(get_db)):
     paid=paid_query();remaining=Bill.total-func.coalesce(paid.c.paid,0)
-    financial=select(Bill).outerjoin(paid,Bill.id==paid.c.bill_id).where(Bill.status.in_(OFFICIAL))
-    outstanding=db.scalar(select(func.coalesce(func.sum(remaining),0)).select_from(Bill).outerjoin(paid,Bill.id==paid.c.bill_id).where(Bill.status.in_(OFFICIAL)))
+    financial=select(Bill).outerjoin(paid,Bill.id==paid.c.bill_id).where(Bill.status.in_(OFFICIAL),Bill.archived_at==None)
+    outstanding=db.scalar(select(func.coalesce(func.sum(remaining),0)).select_from(Bill).outerjoin(paid,Bill.id==paid.c.bill_id).where(Bill.status.in_(OFFICIAL),Bill.archived_at==None))
     overdue=db.scalar(select(func.count()).select_from(financial.where(remaining>0,Bill.due_date<date.today()).subquery()))
-    counts=dict(db.execute(select(Bill.status,func.count()).group_by(Bill.status)).all())
+    counts=dict(db.execute(select(Bill.status,func.count()).where(Bill.archived_at==None).group_by(Bill.status)).all())
     missing=db.scalar(select(func.count()).select_from(ExpectedInvoice).where(ExpectedInvoice.status=='expected',ExpectedInvoice.expected_date<date.today()))
-    duplicate_count=db.scalar(select(func.count()).select_from(Bill).where(cast(Bill.duplicate_ids,String)!='[]',Bill.duplicate_resolution=='',Bill.status!='rejected'))
-    attention=list(db.scalars(select(Bill).where(Bill.status.in_(['needs_review','processing_failed'])).order_by(Bill.created_at.desc()).limit(6)))
+    duplicate_count=db.scalar(select(func.count()).select_from(Bill).where(Bill.archived_at==None,cast(Bill.duplicate_ids,String)!='[]',Bill.duplicate_resolution=='',Bill.status!='rejected'))
+    attention=list(db.scalars(select(Bill).where(Bill.archived_at==None,Bill.status.in_(['needs_review','processing_failed'])).order_by(Bill.created_at.desc()).limit(6)))
     due=list(db.scalars(financial.where(remaining>0).order_by(Bill.due_date).limit(5)))
     activity=[columns(a) for a in db.scalars(select(Audit).where(Audit.action.notin_(['login','logout','employee_sensitive_viewed','document_viewed'])).order_by(Audit.created_at.desc()).limit(8))]
     trend=[]

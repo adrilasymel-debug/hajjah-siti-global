@@ -50,6 +50,6 @@ def require(permission):
     return dependency
 
 def can_read_bill(db, user, bill):
-    if not bill or (user.role != 'BOSS' and bill.submitted_by != user.id):
+    if not bill or (user.role != 'BOSS' and (bill.submitted_by != user.id or bill.archived_at is not None)):
         raise HTTPException(404, 'Invoice not found')
     return bill

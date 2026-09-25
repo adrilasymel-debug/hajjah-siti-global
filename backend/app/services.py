@@ -23,7 +23,7 @@ def payment_status(bill, outstanding, paid):
 
 def bill_json(db, bill, detail=False, known_paid=None):
     outstanding, paid = balance(db, bill) if known_paid is None else (money(bill.total-known_paid), money(known_paid))
-    result = {k: getattr(bill, k) for k in ['id','number','supplier_id','document_id','invoice_date','due_date','currency','subtotal','tax','total','status','notes','created_at','version','verified_at','verified_by','duplicate_ids','duplicate_resolution','review']}
+    result = {k: getattr(bill, k) for k in ['id','number','supplier_id','document_id','invoice_date','due_date','currency','subtotal','tax','total','status','notes','created_at','version','verified_at','verified_by','duplicate_ids','duplicate_resolution','review','archived_at','archived_by','archive_reason']}
     result.update(supplier_name=bill.supplier.name if bill.supplier else 'Supplier needs matching', paid=paid,
                   outstanding=outstanding if bill.status in OFFICIAL else Decimal(0), payment_status=payment_status(bill, outstanding, paid))
     if detail:
@@ -39,7 +39,7 @@ def detect_duplicates(db, bill):
     if bill.document_id:
         doc = db.get(Document, bill.document_id)
         indicators.append(Bill.document_id.in_(select(Document.id).where(Document.sha256 == doc.sha256)))
-    ids = list(db.scalars(select(Bill.id).where(Bill.id != bill.id, or_(*indicators)))) if indicators else []
+    ids = list(db.scalars(select(Bill.id).where(Bill.id != bill.id, Bill.archived_at == None, or_(*indicators)))) if indicators else []
     bill.duplicate_ids = ids
     return ids
 
