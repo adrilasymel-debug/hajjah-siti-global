@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     aws_default_region: str = 'ap-southeast-1'
     session_hours: int = 12
     upload_limit_mb: int = 15
+    upload_total_limit_mb: int = 50
+    upload_max_pages: int = 50
     company_name: str = 'HAJJAH SITI GLOBAL'
     business_type: str = 'Dried seafood'
     free_only: bool = True

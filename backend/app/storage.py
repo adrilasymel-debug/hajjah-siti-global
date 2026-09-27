@@ -4,8 +4,8 @@ from pathlib import Path
 from uuid import uuid4
 import boto3
 from botocore.config import Config
-from PIL import Image, UnidentifiedImageError
-from pypdf import PdfReader
+from PIL import Image, ImageOps
+from pypdf import PdfReader, PdfWriter
 from fastapi import HTTPException
 from .config import settings
 
@@ -27,6 +27,43 @@ def validate_file(data):
             return 'image/png' if image.format == 'PNG' else 'image/jpeg'
     except Exception:
         raise HTTPException(422, 'Use a valid PDF, JPG or PNG. Password-protected PDFs, active content and oversized images are unsupported.')
+
+def prepare_invoice_document(pages):
+    """Validate invoice pages and combine multiple files into one safe PDF."""
+    if not pages:
+        raise HTTPException(422, 'Choose at least one invoice page')
+    if len(pages) > settings.upload_max_pages:
+        raise HTTPException(422, f'Upload at most {settings.upload_max_pages} invoice pages at a time')
+    total_size=sum(len(data) for _,data in pages)
+    if total_size > settings.upload_total_limit_mb * 1024 * 1024:
+        raise HTTPException(422, f'Keep all invoice pages within {settings.upload_total_limit_mb} MB in total')
+    validated=[(name,data,validate_file(data)) for name,data in pages]
+    if len(validated)==1:
+        name,data,mime=validated[0]
+        return name,data,mime,1
+
+    writer=PdfWriter()
+    for _,data,mime in validated:
+        if mime=='application/pdf':
+            reader=PdfReader(io.BytesIO(data), strict=True)
+            for page in reader.pages: writer.add_page(page)
+        else:
+            with Image.open(io.BytesIO(data)) as image:
+                image=ImageOps.exif_transpose(image)
+                image.thumbnail((2500,3500), Image.Resampling.LANCZOS)
+                if image.mode!='RGB':
+                    if image.mode=='RGBA':
+                        background=Image.new('RGB',image.size,'white');background.paste(image,mask=image.getchannel('A'));image=background
+                    else:image=image.convert('RGB')
+                rendered=io.BytesIO();image.save(rendered,format='PDF',resolution=200.0)
+            reader=PdfReader(io.BytesIO(rendered.getvalue()), strict=True)
+            writer.add_page(reader.pages[0])
+        if len(writer.pages)>settings.upload_max_pages:
+            raise HTTPException(422, f'Upload at most {settings.upload_max_pages} invoice pages at a time')
+    output=io.BytesIO();writer.write(output);document=output.getvalue()
+    if len(document)>settings.upload_total_limit_mb * 1024 * 1024:
+        raise HTTPException(422, 'Combined invoice document is too large')
+    return 'invoice-pages.pdf',document,'application/pdf',len(writer.pages)
 
 class Storage:
     def client(self):

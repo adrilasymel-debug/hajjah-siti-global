@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState,lazy,Suspense} from 'react';
 import {Link,useNavigate,useParams,useSearchParams} from 'react-router-dom';
-import {Upload,Plus,ArrowUpRight,FileText,Download,Check,ZoomIn,ZoomOut,RotateCw,ChevronLeft,Save,Trash2,Archive,ArchiveRestore} from 'lucide-react';
+import {Upload,Plus,ArrowUpRight,FileText,Download,Check,ZoomIn,ZoomOut,RotateCw,ChevronLeft,ChevronUp,ChevronDown,Save,Trash2,Archive,ArchiveRestore,Camera,Images} from 'lucide-react';
 import {api,post,put,currency,day,label,today,type Row} from '../api';
 import {useAuth,useToast} from '../main';
 import {Badge,Empty,ErrorBox,Loading,Modal,PageHead,Pager,SearchBox,useResource,useDebounce,Form} from '../ui';
@@ -8,15 +8,22 @@ import SupplierPicker from '../SupplierPicker';
 const PdfPreview=lazy(()=>import('../PdfPreview'));
 
 export function UploadDialog({onClose}:{onClose:()=>void}){
- const [busy,setBusy]=useState(false),[error,setError]=useState(''),[file,setFile]=useState<File|null>(null),[inputKey,setInputKey]=useState(0);
+ const [busy,setBusy]=useState(false),[error,setError]=useState(''),[files,setFiles]=useState<File[]>([]),[inputKey,setInputKey]=useState(0);
  const navigate=useNavigate();
- function remove(){setFile(null);setInputKey(x=>x+1);setError('')}
+ function addPages(selected:FileList|null){
+  const additions=Array.from(selected||[]);if(!additions.length)return;
+  const known=new Set(files.map(f=>`${f.name}:${f.size}:${f.lastModified}`));const next=[...files,...additions.filter(f=>!known.has(`${f.name}:${f.size}:${f.lastModified}`))];
+  if(next.length>50){setError('Upload up to 50 invoice pages at a time.');return}
+  setFiles(next);setInputKey(x=>x+1);setError('');
+ }
+ function remove(index:number){setFiles(files.filter((_,position)=>position!==index));setError('')}
+ function move(index:number,direction:-1|1){const target=index+direction;if(target<0||target>=files.length)return;const next=[...files];[next[index],next[target]]=[next[target],next[index]];setFiles(next)}
  return <Modal title="Upload supplier invoice" onClose={onClose}>
-  <p className="modal-copy">Choose a document first. It stays only in this browser until you select Save &amp; process. Closing or refreshing before saving discards it.</p>
-  <form onSubmit={async e=>{e.preventDefault();if(!file)return;setBusy(true);try{const data=new FormData();data.append('file',file);const bill=await api('/supplier-bills/upload',{method:'POST',body:data});onClose();navigate('/bills/'+bill.id)}catch(e){setError((e as Error).message)}finally{setBusy(false)}}}>
-   {!file?<label className="upload-zone"><Upload size={32}/><strong>Choose an invoice document</strong><span>PDF, JPG or PNG · up to 15 MB · maximum 50 PDF pages</span><input key={inputKey} name="file" type="file" accept="application/pdf,image/png,image/jpeg" required onChange={e=>setFile(e.target.files?.[0]||null)}/></label>:<div className="staged-upload"><FileText size={24}/><span><strong>{file.name}</strong><small>{(file.size/1024/1024).toFixed(2)} MB · Not saved yet</small></span><button className="button secondary small" type="button" disabled={busy} onClick={remove}><Trash2 size={15}/>Remove</button></div>}
+  <p className="modal-copy">Add a PDF, select several image files, or take each page with your camera. Pages are combined into one invoice only when you save. Closing or refreshing discards them.</p>
+  <form onSubmit={async e=>{e.preventDefault();if(!files.length)return;setBusy(true);try{const data=new FormData();files.forEach(file=>data.append('files',file));const bill=await api('/supplier-bills/upload',{method:'POST',body:data});onClose();navigate('/bills/'+bill.id)}catch(e){setError((e as Error).message)}finally{setBusy(false)}}}>
+   {!files.length?<div className="upload-zone"><FileText size={32}/><strong>Add invoice pages</strong><span>PDF, JPG or PNG · up to 50 pages · 15 MB each · 50 MB total</span><div className="upload-options"><label className="button secondary small"><Images size={16}/>Choose files<input key={'files-'+inputKey} className="file-input" type="file" multiple accept="application/pdf,image/png,image/jpeg" onChange={e=>addPages(e.target.files)}/></label><label className="button secondary small"><Camera size={16}/>Take a picture<input key={'camera-'+inputKey} className="file-input" type="file" accept="image/png,image/jpeg" capture="environment" onChange={e=>addPages(e.target.files)}/></label></div></div>:<><div className="staged-pages">{files.map((file,index)=><div className="staged-upload" key={`${file.name}-${index}`}><FileText size={22}/><span><strong>Page {index+1} · {file.name}</strong><small>{(file.size/1024/1024).toFixed(2)} MB · Not saved yet</small></span><button className="icon-btn" type="button" aria-label={'Move page '+(index+1)+' up'} disabled={busy||index===0} onClick={()=>move(index,-1)}><ChevronUp size={16}/></button><button className="icon-btn" type="button" aria-label={'Move page '+(index+1)+' down'} disabled={busy||index===files.length-1} onClick={()=>move(index,1)}><ChevronDown size={16}/></button><button className="icon-btn destructive" type="button" aria-label={'Remove page '+(index+1)} disabled={busy} onClick={()=>remove(index)}><Trash2 size={16}/></button></div>)}</div><div className="upload-options add-pages"><label className="button secondary small"><Images size={16}/>Add files<input key={'files-'+inputKey} className="file-input" type="file" multiple accept="application/pdf,image/png,image/jpeg" onChange={e=>addPages(e.target.files)}/></label><label className="button secondary small"><Camera size={16}/>Take another picture<input key={'camera-'+inputKey} className="file-input" type="file" accept="image/png,image/jpeg" capture="environment" onChange={e=>addPages(e.target.files)}/></label></div></>}
    <ErrorBox message={error}/>
-   <div className="form-actions"><button className="button secondary" type="button" disabled={busy} onClick={onClose}>Cancel</button><button className="button" disabled={busy||!file}>{busy?'Saving document…':'Save & process invoice'}</button></div>
+   <div className="form-actions"><button className="button secondary" type="button" disabled={busy} onClick={onClose}>Cancel</button><button className="button" disabled={busy||!files.length}>{busy?'Saving document…':files.length>1?`Save ${files.length} pages & process`:'Save & process invoice'}</button></div>
   </form>
  </Modal>
 }

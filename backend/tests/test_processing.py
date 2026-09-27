@@ -1,5 +1,6 @@
 from io import BytesIO
 from PIL import Image
+from pypdf import PdfReader
 from sqlalchemy import select
 from app.models import Job,Bill,Audit
 from app import worker
@@ -25,6 +26,23 @@ def test_ai_output_remains_unverified(ctx,monkeypatch):
     assert worker.run_once();detail=ctx['staff'].get('/api/supplier-bills/'+b['id']).json()
     assert detail['status']=='needs_review';assert detail['verified_at'] is None;assert detail['number']=='AI-123'
     assert detail['review']['total']['requires_review']
+
+def test_multiple_invoice_pages_are_combined_into_one_pdf(ctx):
+    first=BytesIO();Image.new('RGB',(80,80),'white').save(first,'PNG')
+    second=BytesIO();Image.new('RGB',(80,80),'lightblue').save(second,'PNG')
+    response=ctx['staff'].post('/api/supplier-bills/upload',files=[
+        ('files',('page-1.png',first.getvalue(),'image/png')),
+        ('files',('page-2.png',second.getvalue(),'image/png')),
+    ])
+    assert response.status_code==201,response.text
+    bill=response.json()
+    detail=ctx['staff'].get('/api/supplier-bills/'+bill['id']).json()
+    assert detail['document']['mime']=='application/pdf'
+    content=ctx['staff'].get('/api/documents/'+bill['document_id']+'/content').content
+    assert len(PdfReader(BytesIO(content)).pages)==2
+    with ctx['db']() as db:
+        event=db.scalar(select(Audit).where(Audit.action=='invoice_uploaded',Audit.entity_id==bill['id']))
+        assert event.details['page_count']==2
 
 def test_oversize_empty_image_and_active_pdf_rejected(ctx):
     c=ctx['staff']

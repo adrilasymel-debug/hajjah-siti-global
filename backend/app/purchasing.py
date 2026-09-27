@@ -10,7 +10,7 @@ from .models import Supplier, Bill, Document, Job, Payment, Allocation, Expected
 from .schemas import SupplierIn, BillCreate, BillEdit, VerifyIn, ReasonIn, PaymentIn, ExpectedIn, ResolveIn
 from .security import current_user, require, can_read_bill, audit
 from .services import columns, page, bill_json, apply_bill, detect_duplicates, validate_bill, balance, OFFICIAL, paid_query
-from .storage import storage, validate_file
+from .storage import storage, prepare_invoice_document
 from .config import settings
 
 router=APIRouter(tags=['Purchasing'])
@@ -108,16 +108,21 @@ def create_bill(data:BillCreate,user=Depends(require('bills.create')),db:Session
     audit(db,user,'invoice_created','bill',bill.id,{'number':bill.number});return bill_json(db,bill,True)
 
 @router.post('/supplier-bills/upload',status_code=201)
-async def upload(file:UploadFile=File(...),user=Depends(require('bills.create')),db:Session=Depends(get_db)):
-    data=await file.read(settings.upload_limit_mb*1024*1024+1);mime=validate_file(data)
+async def upload(files:list[UploadFile]|None=File(None),file:UploadFile|None=File(None),user=Depends(require('bills.create')),db:Session=Depends(get_db)):
+    uploads=[*(files or []),*([file] if file else [])]
+    pages=[]
+    for uploaded in uploads:
+        data=await uploaded.read(settings.upload_limit_mb*1024*1024+1)
+        name=(uploaded.filename or 'invoice').replace('\\','/').split('/')[-1][:250]
+        pages.append((name,data))
+    name,data,mime,page_count=prepare_invoice_document(pages)
     key=storage.put(data,mime)
     try:
-        name=(file.filename or 'invoice').replace('\\','/').split('/')[-1][:250]
         doc=Document(name=name,key=key,mime=mime,size=len(data),sha256=hashlib.sha256(data).hexdigest(),owner_id=user.id)
         db.add(doc);db.flush()
         bill=Bill(document_id=doc.id,submitted_by=user.id,status='processing');db.add(bill);db.flush()
         db.add(Job(bill_id=bill.id));detect_duplicates(db,bill)
-        audit(db,user,'invoice_uploaded','bill',bill.id,{'filename':doc.name,'document_hash':doc.sha256})
+        audit(db,user,'invoice_uploaded','bill',bill.id,{'filename':doc.name,'document_hash':doc.sha256,'page_count':page_count})
         db.commit()
     except Exception:
         db.rollback();storage.delete(key);raise

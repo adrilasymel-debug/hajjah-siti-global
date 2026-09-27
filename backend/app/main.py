@@ -51,7 +51,7 @@ async def security_headers(request:Request,call_next):
         if origin and origin!=settings.frontend_origin:return JSONResponse({'detail':'Untrusted origin'},status_code=403)
         try:length=int(request.headers.get('content-length','0'))
         except ValueError:return JSONResponse({'detail':'Invalid content length'},status_code=400)
-        if length>(settings.upload_limit_mb+1)*1024*1024:return JSONResponse({'detail':'File is too large'},status_code=413)
+        if length>(settings.upload_total_limit_mb+1)*1024*1024:return JSONResponse({'detail':'Upload is too large'},status_code=413)
     response=await call_next(request)
     response.headers['X-Content-Type-Options']='nosniff';response.headers['Referrer-Policy']='same-origin';response.headers['Cache-Control']='no-store'
     if settings.environment=='production':response.headers['Strict-Transport-Security']='max-age=31536000; includeSubDomains'
