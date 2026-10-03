@@ -1,7 +1,7 @@
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, time
 from decimal import Decimal
 from uuid import uuid4
-from sqlalchemy import String, Text, ForeignKey, Numeric, Date, DateTime, JSON, Boolean, CheckConstraint, UniqueConstraint, Index
+from sqlalchemy import String, Text, ForeignKey, Numeric, Date, DateTime, Time, JSON, Boolean, CheckConstraint, UniqueConstraint, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
@@ -154,6 +154,26 @@ class Payroll(Record, Base):
     status: Mapped[str] = mapped_column(String(20), default='draft')
     payment_date: Mapped[date | None] = mapped_column(Date)
     __table_args__ = (UniqueConstraint('period', 'employee_id'), CheckConstraint('basic + allowances + overtime >= deductions'))
+
+class Overtime(Record, Base):
+    __tablename__ = 'overtime_records'
+    user_id: Mapped[str] = mapped_column(ForeignKey('users.id'), index=True)
+    staff_name: Mapped[str] = mapped_column(String(150), index=True)
+    work_date: Mapped[date] = mapped_column(Date, index=True)
+    start_time: Mapped[time] = mapped_column(Time)
+    end_time: Mapped[time] = mapped_column(Time)
+    break_minutes: Mapped[int] = mapped_column(default=0)
+    minutes: Mapped[int]
+    reason: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default='submitted', index=True)
+    reviewed_by: Mapped[str | None] = mapped_column(ForeignKey('users.id'))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_note: Mapped[str] = mapped_column(Text, default='')
+    __table_args__ = (
+        CheckConstraint('minutes > 0 AND minutes <= 720'),
+        CheckConstraint('break_minutes >= 0 AND break_minutes <= 240'),
+        CheckConstraint("status IN ('submitted','approved','rejected')"),
+    )
 
 class Audit(Record, Base):
     __tablename__ = 'audit_logs'

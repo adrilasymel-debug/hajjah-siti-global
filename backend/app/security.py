@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session as DBSession
 from .db import get_db
 from .models import User, Role, Session, Audit, now
 
-STAFF_PERMISSIONS = ['bills.read_own', 'bills.create', 'bills.edit_own', 'bills.verify_own', 'documents.read_own']
-BOSS_PERMISSIONS = STAFF_PERMISSIONS + ['dashboard.read', 'bills.read_all', 'bills.manage', 'suppliers.manage', 'payments.manage', 'employees.manage', 'payroll.manage', 'reports.read', 'audit.read', 'users.manage', 'settings.manage', 'documents.manage', 'expected.manage']
+STAFF_PERMISSIONS = ['bills.read_own', 'bills.create', 'bills.edit_own', 'bills.verify_own', 'documents.read_own', 'overtime.submit_own']
+BOSS_PERMISSIONS = STAFF_PERMISSIONS + ['dashboard.read', 'bills.read_all', 'bills.manage', 'suppliers.manage', 'payments.manage', 'employees.manage', 'payroll.manage', 'overtime.manage', 'reports.read', 'audit.read', 'users.manage', 'settings.manage', 'documents.manage', 'expected.manage']
 
 def hash_password(password):
     if len(password.encode()) > 72:

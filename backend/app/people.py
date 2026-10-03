@@ -1,18 +1,21 @@
 from io import BytesIO
 from decimal import Decimal
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import HexColor
 from .db import get_db
-from .models import Employee, Payroll, BusinessSetting
-from .schemas import EmployeeIn, PayrollIn, PayrollPayIn
+from .models import Employee, Payroll, Overtime, BusinessSetting, now
+from .schemas import EmployeeIn, PayrollIn, PayrollPayIn, OvertimeIn, ReasonIn
 from .security import require, audit
 from .services import columns, page, money
 from .config import settings
 
 router=APIRouter(tags=['People and payroll'])
+MALAYSIA=ZoneInfo('Asia/Kuala_Lumpur')
 
 @router.get('/employees')
 def employees(q:str='',department:str='',active:bool|None=None,page_number:int=Query(1,ge=1),page_size:int=Query(25,ge=1,le=100),user=Depends(require('employees.manage')),db:Session=Depends(get_db)):
@@ -42,6 +45,58 @@ def edit_employee(id:str,data:EmployeeIn,user=Depends(require('employees.manage'
     for k,v in data.model_dump().items():setattr(e,k,v)
     audit(db,user,'employee_updated','employee',id,{'changed_fields':changed,'salary_before':salary_before,'salary_after':str(e.salary)})
     return columns(e,('bank_account',))
+
+def overtime_json(record):
+    return columns(record)
+
+def overtime_minutes(data,local_now):
+    start=datetime.combine(local_now.date(),data.start_time,tzinfo=MALAYSIA)
+    end=datetime.combine(local_now.date(),data.end_time,tzinfo=MALAYSIA)
+    if end<=start:raise HTTPException(422,'Overtime must start and finish on the same day, with the end time after the start time')
+    if end>local_now:raise HTTPException(422,'Submit the OT form only after the overtime work is completed')
+    gross=int((end-start).total_seconds()//60)
+    if gross>720:raise HTTPException(422,'An overtime entry cannot exceed 12 hours')
+    minutes=gross-data.break_minutes
+    if minutes<15:raise HTTPException(422,'Overtime after breaks must be at least 15 minutes')
+    return minutes
+
+@router.get('/overtime')
+def overtime(status:str='',page_number:int=Query(1,ge=1),page_size:int=Query(25,ge=1,le=100),user=Depends(require('overtime.submit_own')),db:Session=Depends(get_db)):
+    query=select(Overtime)
+    if user.role!='BOSS':query=query.where(Overtime.user_id==user.id)
+    if status:query=query.where(Overtime.status==status)
+    rows,total=page(db,query.order_by(Overtime.work_date.desc(),Overtime.created_at.desc()),page_number,page_size)
+    return {'items':[overtime_json(record) for record in rows],'total':total,'today':str(datetime.now(MALAYSIA).date())}
+
+@router.post('/overtime',status_code=201)
+def submit_overtime(data:OvertimeIn,user=Depends(require('overtime.submit_own')),db:Session=Depends(get_db)):
+    local_now=datetime.now(MALAYSIA);work_date=local_now.date();minutes=overtime_minutes(data,local_now)
+    duplicate=db.scalar(select(Overtime.id).where(Overtime.user_id==user.id,Overtime.work_date==work_date,
+                                                  Overtime.start_time==data.start_time,Overtime.end_time==data.end_time,
+                                                  Overtime.status!='rejected'))
+    if duplicate:raise HTTPException(409,'This overtime period has already been submitted')
+    record=Overtime(user_id=user.id,staff_name=user.name,work_date=work_date,start_time=data.start_time,end_time=data.end_time,
+                    break_minutes=data.break_minutes,minutes=minutes,reason=data.reason)
+    db.add(record);db.flush();audit(db,user,'overtime_submitted','overtime',record.id,{'work_date':str(work_date),'minutes':minutes})
+    return overtime_json(record)
+
+@router.post('/overtime/{id}/approve')
+def approve_overtime(id:str,user=Depends(require('overtime.manage')),db:Session=Depends(get_db)):
+    record=db.scalar(select(Overtime).where(Overtime.id==id).with_for_update())
+    if not record:raise HTTPException(404,'Overtime record not found')
+    if record.status!='submitted':raise HTTPException(409,'Only submitted overtime can be approved')
+    record.status='approved';record.reviewed_by=user.id;record.reviewed_at=now()
+    audit(db,user,'overtime_approved','overtime',id,{'staff_name':record.staff_name,'minutes':record.minutes})
+    return overtime_json(record)
+
+@router.post('/overtime/{id}/reject')
+def reject_overtime(id:str,data:ReasonIn,user=Depends(require('overtime.manage')),db:Session=Depends(get_db)):
+    record=db.scalar(select(Overtime).where(Overtime.id==id).with_for_update())
+    if not record:raise HTTPException(404,'Overtime record not found')
+    if record.status!='submitted':raise HTTPException(409,'Only submitted overtime can be rejected')
+    record.status='rejected';record.reviewed_by=user.id;record.reviewed_at=now();record.review_note=data.reason
+    audit(db,user,'overtime_rejected','overtime',id,{'staff_name':record.staff_name,'reason':data.reason})
+    return overtime_json(record)
 
 def payroll_json(p):
     gross=money(p.basic+p.allowances+p.overtime)

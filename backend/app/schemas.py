@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, time
 from decimal import Decimal
 from typing import Literal
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
@@ -125,6 +125,12 @@ class PayrollPayIn(Input):
     def past(cls, value):
         if value > date.today(): raise ValueError('Payment date cannot be in the future')
         return value
+
+class OvertimeIn(Input):
+    start_time: time
+    end_time: time
+    break_minutes: int = Field(default=0, ge=0, le=240)
+    reason: str = Field(min_length=5, max_length=2000)
 
 class SettingIn(Input):
     company_name: str = Field(min_length=2, max_length=150)
